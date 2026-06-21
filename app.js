@@ -336,7 +336,21 @@ function PhrasebookView() {
   );
 }
 
-function ItineraryView() {
+function SubTabs({ value, onChange, tabs }) {
+  return (
+    <div className="flex gap-2 mb-3">
+      {tabs.map(t => (
+        <button key={t.id} onClick={() => onChange(t.id)}
+          style={value === t.id ? { backgroundColor: HK_RED } : {}}
+          className={`no-tap flex-1 py-2 rounded font-medium ${value === t.id ? 'text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ItinerarySection() {
   const [items, setItems] = useLocalStorage('hk-trip:itinerary', []);
   const [newDate, setNewDate] = useState('');
   const [newTitle, setNewTitle] = useState('');
@@ -359,39 +373,263 @@ function ItineraryView() {
   const inputCls = 'w-full bg-slate-50 border border-slate-300 text-slate-900 rounded px-2 py-2 mb-2 outline-none';
 
   return (
-    <div className="pb-24">
-      <Header title="📅 Lịch trình" />
-      <div className="p-3">
-        <div className="bg-white rounded-lg p-3 mb-4 border border-slate-200 shadow-sm">
-          <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className={inputCls} />
-          <input placeholder="Hoạt động (vd: Victoria Peak)" value={newTitle} onChange={e => setNewTitle(e.target.value)} className={inputCls} />
-          <input placeholder="Ghi chú (vd: 14:00, đi Peak Tram)" value={newNote} onChange={e => setNewNote(e.target.value)} className={inputCls} />
-          <PrimaryButton onClick={add} className="w-full py-2">+ Thêm</PrimaryButton>
-        </div>
-        {grouped.length === 0 && <div className="text-slate-500 text-center py-8">Chưa có lịch trình.</div>}
-        {grouped.map(([date, its]) => (
-          <div key={date} className="mb-4">
-            <div className="text-sm font-semibold mb-2 px-1" style={{ color: HK_RED }}>📅 {date}</div>
-            {its.map(it => (
-              <div key={it.id} className="bg-white rounded-lg p-3 mb-2 border border-slate-200 flex items-start gap-2 shadow-sm">
-                <button onClick={() => toggle(it.id)} className="no-tap text-xl shrink-0 mt-0.5 leading-none">
-                  {it.done ? '✅' : '⬜'}
-                </button>
-                <div className="flex-1 min-w-0">
-                  <div className={`font-medium ${it.done ? 'line-through text-slate-400' : 'text-slate-900'}`}>{it.title}</div>
-                  {it.note && <div className="text-sm text-slate-500 mt-0.5">{it.note}</div>}
-                </div>
-                <button onClick={() => remove(it.id)} className="no-tap text-slate-400 shrink-0 px-1">✕</button>
+    <>
+      <div className="bg-white rounded-lg p-3 mb-4 border border-slate-200 shadow-sm">
+        <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className={inputCls} />
+        <input placeholder="Hoạt động (vd: Victoria Peak)" value={newTitle} onChange={e => setNewTitle(e.target.value)} className={inputCls} />
+        <input placeholder="Ghi chú (vd: 14:00, đi Peak Tram)" value={newNote} onChange={e => setNewNote(e.target.value)} className={inputCls} />
+        <PrimaryButton onClick={add} className="w-full py-2">+ Thêm</PrimaryButton>
+      </div>
+      {grouped.length === 0 && <div className="text-slate-500 text-center py-8">Chưa có lịch trình.</div>}
+      {grouped.map(([date, its]) => (
+        <div key={date} className="mb-4">
+          <div className="text-sm font-semibold mb-2 px-1" style={{ color: HK_RED }}>📅 {date}</div>
+          {its.map(it => (
+            <div key={it.id} className="bg-white rounded-lg p-3 mb-2 border border-slate-200 flex items-start gap-2 shadow-sm">
+              <button onClick={() => toggle(it.id)} className="no-tap text-xl shrink-0 mt-0.5 leading-none">
+                {it.done ? '✅' : '⬜'}
+              </button>
+              <div className="flex-1 min-w-0">
+                <div className={`font-medium ${it.done ? 'line-through text-slate-400' : 'text-slate-900'}`}>{it.title}</div>
+                {it.note && <div className="text-sm text-slate-500 mt-0.5">{it.note}</div>}
               </div>
-            ))}
+              <button onClick={() => remove(it.id)} className="no-tap text-slate-400 shrink-0 px-1">✕</button>
+            </div>
+          ))}
+        </div>
+      ))}
+    </>
+  );
+}
+
+function compressImage(file, maxWidth = 1024, quality = 0.78) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Đọc file lỗi'));
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Ảnh hỏng'));
+      img.onload = () => {
+        const scale = Math.min(1, maxWidth / img.width);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function NotesSection() {
+  const [notes, setNotes] = useLocalStorage('hk-trip:notes', []);
+  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [text, setText] = useState('');
+  const [photo, setPhoto] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [viewer, setViewer] = useState(null);
+
+  const handleFile = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setBusy(true);
+    try {
+      const compressed = await compressImage(f);
+      setPhoto(compressed);
+    } catch (err) {
+      alert('Lỗi xử lý ảnh: ' + err.message);
+    } finally {
+      setBusy(false);
+      e.target.value = '';
+    }
+  };
+
+  const add = () => {
+    if (!text.trim() && !photo) return;
+    setNotes([{ id: Date.now(), date, text: text.trim(), photo, createdAt: new Date().toISOString() }, ...notes]);
+    setText(''); setPhoto(null);
+  };
+  const remove = (id) => {
+    if (confirm('Xóa ghi chép này?')) setNotes(notes.filter(n => n.id !== id));
+  };
+
+  const grouped = useMemo(() => {
+    const m = {};
+    notes.forEach(n => { (m[n.date] = m[n.date] || []).push(n); });
+    return Object.entries(m).sort(([a], [b]) => b.localeCompare(a));
+  }, [notes]);
+
+  const inputCls = 'w-full bg-slate-50 border border-slate-300 text-slate-900 rounded px-2 py-2 outline-none';
+
+  return (
+    <>
+      <div className="bg-white rounded-lg p-3 mb-4 border border-slate-200 shadow-sm">
+        <input type="date" value={date} onChange={e => setDate(e.target.value)} className={inputCls + ' mb-2'} />
+        <textarea placeholder="Hôm nay đi đâu, ăn gì, gặp ai..." value={text} onChange={e => setText(e.target.value)}
+          rows={4} className={inputCls + ' mb-2 resize-none'} />
+        {photo && (
+          <div className="relative mb-2">
+            <img src={photo} className="w-full rounded border border-slate-200" alt="" />
+            <button onClick={() => setPhoto(null)}
+              className="no-tap absolute top-1 right-1 bg-white/95 rounded-full w-7 h-7 text-sm font-bold shadow flex items-center justify-center">✕</button>
           </div>
-        ))}
+        )}
+        <div className="flex gap-2">
+          <label className={`no-tap flex-1 cursor-pointer bg-slate-100 border border-slate-300 text-slate-700 rounded py-2 text-center font-medium ${busy ? 'opacity-50' : ''}`}>
+            📷 {busy ? 'Đang xử lý…' : photo ? 'Đổi ảnh' : 'Thêm ảnh'}
+            <input type="file" accept="image/*" capture="environment" onChange={handleFile} className="hidden" disabled={busy} />
+          </label>
+          <PrimaryButton onClick={add} className="flex-1 py-2">+ Lưu</PrimaryButton>
+        </div>
+      </div>
+      {grouped.length === 0 && <div className="text-slate-500 text-center py-8">Chưa có nhật ký nào.<br/><span className="text-xs">Ghi lại khoảnh khắc đầu tiên ở trên ☝️</span></div>}
+      {grouped.map(([d, ns]) => (
+        <div key={d} className="mb-4">
+          <div className="text-sm font-semibold mb-2 px-1" style={{ color: HK_RED }}>📔 {d}</div>
+          {ns.map(n => (
+            <div key={n.id} className="bg-white rounded-lg p-3 mb-2 border border-slate-200 shadow-sm">
+              {n.photo && (
+                <img src={n.photo} className="w-full rounded mb-2 cursor-pointer" alt=""
+                  onClick={() => setViewer(n.photo)} />
+              )}
+              {n.text && <div className="text-slate-900 whitespace-pre-wrap text-sm leading-relaxed">{n.text}</div>}
+              <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+                <div className="text-xs text-slate-400">
+                  {new Date(n.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                </div>
+                <button onClick={() => remove(n.id)} className="no-tap text-slate-400 px-2 text-xs">Xóa</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ))}
+      {viewer && (
+        <div onClick={() => setViewer(null)}
+          className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4 no-tap">
+          <img src={viewer} className="max-w-full max-h-full rounded" alt="" />
+          <button onClick={() => setViewer(null)}
+            className="no-tap absolute top-4 right-4 bg-white/95 rounded-full w-10 h-10 font-bold flex items-center justify-center shadow">✕</button>
+        </div>
+      )}
+    </>
+  );
+}
+
+function PlanView() {
+  const [sub, setSub] = useState('plan');
+  return (
+    <div className="pb-24">
+      <Header title="📅 Lịch & Nhật ký" />
+      <div className="px-3 pt-3">
+        <SubTabs value={sub} onChange={setSub} tabs={[
+          { id: 'plan', label: 'Lịch trình' },
+          { id: 'notes', label: 'Nhật ký' },
+        ]} />
+        {sub === 'plan' && <ItinerarySection />}
+        {sub === 'notes' && <NotesSection />}
       </div>
     </div>
   );
 }
 
 const CATEGORIES = ['Ăn uống', 'Di chuyển', 'Lưu trú', 'Tham quan', 'Mua sắm', 'Khác'];
+
+function GiftsSection({ rate }) {
+  const [gifts, setGifts] = useLocalStorage('hk-trip:gifts', []);
+  const [recipient, setRecipient] = useState('');
+  const [item, setItem] = useState('');
+  const [budget, setBudget] = useState('');
+  const [note, setNote] = useState('');
+
+  const add = () => {
+    if (!recipient.trim() || !item.trim()) return;
+    setGifts([{
+      id: Date.now(),
+      recipient: recipient.trim(),
+      item: item.trim(),
+      budget: parseFloat(budget) || 0,
+      note: note.trim(),
+      bought: false,
+    }, ...gifts]);
+    setItem(''); setBudget(''); setNote('');
+  };
+  const toggle = (id) => setGifts(gifts.map(g => g.id === id ? { ...g, bought: !g.bought } : g));
+  const remove = (id) => setGifts(gifts.filter(g => g.id !== id));
+
+  const byRecipient = useMemo(() => {
+    const m = {};
+    gifts.forEach(g => { (m[g.recipient] = m[g.recipient] || []).push(g); });
+    return Object.entries(m).sort(([a], [b]) => a.localeCompare(b));
+  }, [gifts]);
+
+  const totalBudget = gifts.reduce((s, g) => s + (g.budget || 0), 0);
+  const totalBought = gifts.filter(g => g.bought).reduce((s, g) => s + (g.budget || 0), 0);
+
+  const inputCls = 'w-full bg-slate-50 border border-slate-300 text-slate-900 rounded px-2 py-2 mb-2 outline-none';
+
+  return (
+    <>
+      <div className="bg-white rounded-lg p-3 mb-3 border border-slate-200 shadow-sm">
+        <input placeholder="Người nhận (vd: Mẹ)" value={recipient} onChange={e => setRecipient(e.target.value)} className={inputCls} />
+        <input placeholder="Quà (vd: Trà sữa hộp)" value={item} onChange={e => setItem(e.target.value)} className={inputCls} />
+        <input type="number" inputMode="decimal" placeholder="Ngân sách HK$" value={budget} onChange={e => setBudget(e.target.value)} className={inputCls} />
+        {budget && parseFloat(budget) > 0 && (
+          <div className="text-xs mb-2" style={{ color: HK_RED }}>≈ {Math.round(parseFloat(budget) * rate).toLocaleString('vi-VN')}đ</div>
+        )}
+        <input placeholder="Ghi chú (vd: mua ở K11 Musea)" value={note} onChange={e => setNote(e.target.value)} className={inputCls} />
+        <PrimaryButton onClick={add} className="w-full py-2">+ Thêm quà</PrimaryButton>
+      </div>
+
+      {gifts.length > 0 && (
+        <div className="bg-white rounded-lg p-3 mb-3 border border-slate-200 shadow-sm">
+          <div className="flex justify-between text-sm">
+            <span className="text-slate-600">Đã mua</span>
+            <span className="font-mono text-slate-900">HK${totalBought.toFixed(2)} / HK${totalBudget.toFixed(2)}</span>
+          </div>
+          <div className="text-xs text-slate-500 mb-2">
+            ≈ {Math.round(totalBought * rate).toLocaleString('vi-VN')}đ / {Math.round(totalBudget * rate).toLocaleString('vi-VN')}đ
+          </div>
+          <div className="bg-slate-200 h-2 rounded overflow-hidden">
+            <div className="h-2 transition-all" style={{ width: `${totalBudget ? (totalBought / totalBudget) * 100 : 0}%`, backgroundColor: HK_RED }} />
+          </div>
+        </div>
+      )}
+
+      {byRecipient.length === 0 && <div className="text-slate-500 text-center py-8">Chưa có quà nào.<br/><span className="text-xs">Lên kế hoạch mua quà cho ai đó ở trên ☝️</span></div>}
+
+      {byRecipient.map(([who, items]) => {
+        const sub = items.reduce((s, g) => s + (g.budget || 0), 0);
+        return (
+          <div key={who} className="mb-4">
+            <div className="flex items-center justify-between mb-2 px-1">
+              <div className="text-sm font-semibold" style={{ color: HK_RED }}>🎁 {who}</div>
+              <div className="text-xs text-slate-500 font-mono">HK${sub.toFixed(2)}</div>
+            </div>
+            {items.map(g => (
+              <div key={g.id} className="bg-white rounded-lg p-3 mb-2 border border-slate-200 flex items-start gap-2 shadow-sm">
+                <button onClick={() => toggle(g.id)} className="no-tap text-xl shrink-0 mt-0.5 leading-none">
+                  {g.bought ? '✅' : '⬜'}
+                </button>
+                <div className="flex-1 min-w-0">
+                  <div className={`font-medium ${g.bought ? 'line-through text-slate-400' : 'text-slate-900'}`}>{g.item}</div>
+                  {g.budget > 0 && (
+                    <div className="text-sm text-slate-500">
+                      HK${g.budget.toFixed(2)} <span className="text-slate-400">(≈ {Math.round(g.budget * rate).toLocaleString('vi-VN')}đ)</span>
+                    </div>
+                  )}
+                  {g.note && <div className="text-xs text-slate-500 mt-0.5">{g.note}</div>}
+                </div>
+                <button onClick={() => remove(g.id)} className="no-tap text-slate-400 shrink-0 px-1">✕</button>
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </>
+  );
+}
 
 function MoneyView() {
   const [sub, setSub] = useState('expenses');
@@ -465,18 +703,13 @@ function MoneyView() {
     <div className="pb-24">
       <Header title="💵 Chi tiêu" />
       <div className="px-3 pt-3">
-        <div className="flex gap-2 mb-3">
-          <button onClick={() => setSub('expenses')}
-            style={sub === 'expenses' ? { backgroundColor: HK_RED } : {}}
-            className={`no-tap flex-1 py-2 rounded font-medium ${sub === 'expenses' ? 'text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>
-            Sổ chi
-          </button>
-          <button onClick={() => setSub('convert')}
-            style={sub === 'convert' ? { backgroundColor: HK_RED } : {}}
-            className={`no-tap flex-1 py-2 rounded font-medium ${sub === 'convert' ? 'text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>
-            Quy đổi
-          </button>
-        </div>
+        <SubTabs value={sub} onChange={setSub} tabs={[
+          { id: 'expenses', label: 'Sổ chi' },
+          { id: 'convert', label: 'Quy đổi' },
+          { id: 'gifts', label: 'Quà' },
+        ]} />
+
+        {sub === 'gifts' && <GiftsSection rate={rate} />}
 
         {sub === 'expenses' && (
           <>
@@ -847,7 +1080,7 @@ function App() {
   return (
     <div className="min-h-screen bg-slate-50">
       {tab === 'phrase' && <PhrasebookView />}
-      {tab === 'plan' && <ItineraryView />}
+      {tab === 'plan' && <PlanView />}
       {tab === 'money' && <MoneyView />}
       {tab === 'check' && <ChecklistView />}
       {tab === 'info' && <InfoView />}

@@ -1,4 +1,4 @@
-const CACHE = 'hk-trip-v2';
+const CACHE = 'hk-trip-v3';
 const ASSETS = [
   './',
   './index.html',
