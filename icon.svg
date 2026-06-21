@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#dc2626" rx="96"/>
+  <text x="256" y="295" font-family="Arial, sans-serif" font-size="210" font-weight="bold" fill="white" text-anchor="middle">HK</text>
+  <text x="256" y="390" font-family="Arial, sans-serif" font-size="56" fill="white" text-anchor="middle" opacity="0.85">2026</text>
+</svg>
